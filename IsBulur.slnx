@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="IsBulur.API/IsBulur.API.csproj" />
+  <Project Path="IsBulur.Shared/IsBulur.Shared.csproj" />
+</Solution>
