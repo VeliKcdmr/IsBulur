@@ -121,62 +121,37 @@ public class ElemanNetScraper : IJobScraper
         try
         {
             await Task.Delay(200);
-            var html = await _http.GetStringAsync(url);
+            var response = await _http.GetAsync(url);
+            _log.LogInformation("[eleman.net] Detay HTTP {Status}: {Url}", (int)response.StatusCode, url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.LogWarning("[eleman.net] Detay başarısız: {Status}", response.StatusCode);
+                return null;
+            }
+
+            var html = await response.Content.ReadAsStringAsync();
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
             var job = new JobListing { Url = url, Source = SourceName };
 
-            // Başlık
-            job.Title = HtmlEntity.DeEntitize(
-                doc.DocumentNode.SelectSingleNode("//h1")?.InnerText.Trim() ?? "");
-
-            // Şirket — birden fazla yerde olabilir
-            job.Company = HtmlEntity.DeEntitize(
-                doc.DocumentNode.SelectSingleNode(
-                    "//*[contains(@class,'isverenAdi')] | " +
-                    "//*[contains(@class,'company-name')] | " +
-                    "//*[contains(@class,'c-company-name')] | " +
-                    "//*[contains(@class,'employer-name')]")
-                ?.InnerText.Trim() ?? "");
-
-            // Konum
-            job.City = HtmlEntity.DeEntitize(
-                doc.DocumentNode.SelectSingleNode(
-                    "//*[contains(@class,'sehir')] | " +
-                    "//*[contains(@class,'city')] | " +
-                    "//*[contains(@class,'location')]")
-                ?.InnerText.Trim() ?? "");
-
-            // İş tanımı — eleman.net'te genellikle .ilan-aciklama veya .c-job-description
-            string[] descSelectors =
-            [
-                "//div[contains(@class,'ilan-aciklama')]",
-                "//div[contains(@class,'job-description')]",
-                "//div[contains(@class,'c-job-description')]",
-                "//div[contains(@class,'ilan-detay')]",
-                "//div[contains(@class,'jobDesc')]",
-                "//div[@id='ilanMetni']",
-                "//div[@id='jobDescription']",
-                "//section[contains(@class,'description')]",
-            ];
-
-            foreach (var selector in descSelectors)
+            // JSON-LD'den veri çek (en güvenilir yöntem)
+            if (TryParseJobPosting(doc, job))
             {
-                var node = doc.DocumentNode.SelectSingleNode(selector);
-                if (node == null) continue;
-
-                var text = HtmlEntity.DeEntitize(node.InnerText.Trim());
-                if (text.Length > 20)
-                {
-                    job.Description = CleanWhitespace(text);
-                    break;
-                }
+                _log.LogInformation("[eleman.net] JSON-LD ile detay alındı: {Title}", job.Title);
+                return job;
             }
 
-            // Ek bilgiler — tablo veya liste satırları
+            // Fallback: HTML selector'lar
+            job.Title = HtmlEntity.DeEntitize(
+                doc.DocumentNode.SelectSingleNode("//h1")?.InnerText.Trim() ?? "");
+            job.Company = HtmlEntity.DeEntitize(
+                doc.DocumentNode.SelectSingleNode("//*[contains(@class,'isverenAdi')]")
+                ?.InnerText.Trim() ?? "");
             ParseInfoRows(doc, job);
 
+            _log.LogInformation("[eleman.net] HTML fallback ile detay alındı: {Title}", job.Title);
             return job;
         }
         catch (Exception ex)
@@ -184,6 +159,89 @@ public class ElemanNetScraper : IJobScraper
             _log.LogError(ex, "[eleman.net] Detay hatası: {Url}", url);
             return null;
         }
+    }
+
+    private bool TryParseJobPosting(HtmlDocument doc, JobListing job)
+    {
+        var scripts = doc.DocumentNode.SelectNodes("//script[@type='application/ld+json']");
+        if (scripts == null) return false;
+
+        foreach (var script in scripts)
+        {
+            try
+            {
+                var json = script.InnerText.Trim();
+                using var jdoc = System.Text.Json.JsonDocument.Parse(json);
+                var root = jdoc.RootElement;
+
+                if (!root.TryGetProperty("@type", out var typeEl) ||
+                    typeEl.GetString() != "JobPosting") continue;
+
+                if (root.TryGetProperty("title", out var t))
+                    job.Title = HtmlEntity.DeEntitize(t.GetString() ?? "");
+
+                if (root.TryGetProperty("description", out var d))
+                    job.Description = HtmlEntity.DeEntitize(d.GetString() ?? "");
+
+                if (root.TryGetProperty("employmentType", out var et))
+                    job.WorkType = et.GetString() ?? "";
+
+                if (root.TryGetProperty("validThrough", out var vt))
+                    job.ClosingDate = vt.GetString()?.Split('T')[0] ?? "";
+
+                if (root.TryGetProperty("hiringOrganization", out var org) &&
+                    org.TryGetProperty("name", out var orgName))
+                    job.Company = HtmlEntity.DeEntitize(orgName.GetString() ?? "");
+
+                if (root.TryGetProperty("jobLocation", out var loc))
+                {
+                    if (loc.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        var cities = loc.EnumerateArray()
+                            .Where(l => l.TryGetProperty("address", out _))
+                            .Select(l => {
+                                l.TryGetProperty("address", out var a);
+                                a.TryGetProperty("addressLocality", out var al);
+                                return al.GetString();
+                            })
+                            .Where(s => s != null);
+                        job.City = string.Join(", ", cities);
+                    }
+                    else if (loc.TryGetProperty("address", out var addr) &&
+                             addr.TryGetProperty("addressLocality", out var locality))
+                        job.City = locality.GetString() ?? "";
+                }
+
+                if (root.TryGetProperty("educationRequirements", out var edu))
+                {
+                    if (edu.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        job.EducationLevel = string.Join(", ", edu.EnumerateArray()
+                            .Select(e => e.TryGetProperty("credentialCategory", out var cc)
+                                ? cc.GetString() : e.GetString())
+                            .Where(s => !string.IsNullOrEmpty(s)));
+                    else if (edu.ValueKind == System.Text.Json.JsonValueKind.String)
+                        job.EducationLevel = edu.GetString() ?? "";
+                }
+
+                if (root.TryGetProperty("experienceRequirements", out var exp))
+                    job.Experience = exp.ValueKind == System.Text.Json.JsonValueKind.String
+                        ? exp.GetString() ?? ""
+                        : exp.TryGetProperty("name", out var expN) ? expN.GetString() ?? "" : "";
+
+                if (root.TryGetProperty("industry", out var ind))
+                {
+                    if (ind.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        job.Sector = string.Join(", ", ind.EnumerateArray()
+                            .Select(i => i.GetString()).Where(s => s != null));
+                    else if (ind.ValueKind == System.Text.Json.JsonValueKind.String)
+                        job.Sector = ind.GetString() ?? "";
+                }
+
+                return !string.IsNullOrEmpty(job.Description);
+            }
+            catch { /* Bu script parse edilemiyorsa atla */ }
+        }
+        return false;
     }
 
     private static void ParseInfoRows(HtmlDocument doc, JobListing job)

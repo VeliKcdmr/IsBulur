@@ -22,7 +22,7 @@ public class JobApiService
         List<string>? sources = null)
     {
         var url = $"/api/jobs/search?keyword={Uri.EscapeDataString(keyword)}" +
-                  $"&location={Uri.EscapeDataString(location)}" +
+                  $"&location={Uri.EscapeDataString(location.ToLower())}" +
                   $"&workModel={Uri.EscapeDataString(workModel)}" +
                   $"&workType={Uri.EscapeDataString(workType)}" +
                   $"&page={page}&pageSize=10";

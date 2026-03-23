@@ -121,87 +121,37 @@ public class SecretCvScraper : IJobScraper
         try
         {
             await Task.Delay(200);
-            var html = await _http.GetStringAsync(url);
+            var response = await _http.GetAsync(url);
+            _log.LogInformation("[secretcv.com] Detay HTTP {Status}: {Url}", (int)response.StatusCode, url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.LogWarning("[secretcv.com] Detay başarısız: {Status}", response.StatusCode);
+                return null;
+            }
+
+            var html = await response.Content.ReadAsStringAsync();
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
             var job = new JobListing { Url = url, Source = SourceName };
 
-            // Başlık
-            job.Title = HtmlEntity.DeEntitize(
-                doc.DocumentNode.SelectSingleNode(
-                    "//h1 | //h2[contains(@class,'cj-title')] | //*[contains(@class,'job-title')]")
-                ?.InnerText.Trim() ?? "");
-
-            // Şirket — sayfadan veya URL'den
-            var companyNode = doc.DocumentNode.SelectSingleNode(
-                "//*[contains(@class,'company-name')] | " +
-                "//*[contains(@class,'employer')] | " +
-                "//*[contains(@class,'cj-company')] | " +
-                "//a[contains(@href,'/sirket/')]");
-            job.Company = HtmlEntity.DeEntitize(companyNode?.InnerText.Trim() ?? "");
-
-            // Konum
-            job.City = HtmlEntity.DeEntitize(
-                doc.DocumentNode.SelectSingleNode(
-                    "//*[contains(@class,'city')] | " +
-                    "//*[contains(@class,'location')] | " +
-                    "//*[contains(@class,'cj-city')]")
-                ?.InnerText.Trim() ?? "");
-
-            // İş tanımı — önce yapısal selector'lar, sonra fallback
-            string[] descSelectors =
-            [
-                "//div[contains(@class,'content-job')]",
-                "//div[contains(@class,'cv-card-body')]",
-                "//div[contains(@class,'job-detail')]",
-                "//div[contains(@class,'cj-description')]",
-                "//div[contains(@class,'ilan-detay')]",
-                "//div[@id='jobDescription']",
-                "//div[@id='ilanMetni']",
-                "//article",
-                "//main",
-            ];
-
-            foreach (var selector in descSelectors)
+            // JSON-LD'den veri çek (en güvenilir yöntem)
+            if (TryParseJobPosting(doc, job))
             {
-                var node = doc.DocumentNode.SelectSingleNode(selector);
-                if (node == null) continue;
-
-                // Gereksiz navigasyon/buton nodlarını atla
-                var paraNodes = node.SelectNodes(".//p | .//li");
-                if (paraNodes != null && paraNodes.Count > 0)
-                {
-                    var lines = paraNodes
-                        .Select(n => HtmlEntity.DeEntitize(n.InnerText.Trim()))
-                        .Where(t => t.Length > 5
-                            && !t.Contains("İşe Başvur")
-                            && !t.Contains("Cv Oluştur")
-                            && !t.Contains("İlanı Şikayet")
-                            && !t.Contains("Giriş Yap")
-                            && !t.Contains("Üye Ol"))
-                        .ToList();
-
-                    if (lines.Count > 0)
-                    {
-                        job.Description = string.Join("\n", lines);
-                        break;
-                    }
-                }
-
-                // Paragraf yoksa düz metin dene
-                var rawText = HtmlEntity.DeEntitize(node.InnerText.Trim());
-                if (rawText.Length > 50)
-                {
-                    job.Description = CleanWhitespace(rawText);
-                    break;
-                }
+                _log.LogInformation("[secretcv.com] JSON-LD ile detay alındı: {Title}", job.Title);
+                return job;
             }
 
-            // Ek bilgiler — tablo veya dl/dt/dd yapısı
-            ParseInfoRows(doc, job);
+            // Fallback: HTML selector'lar
+            job.Title = HtmlEntity.DeEntitize(
+                doc.DocumentNode.SelectSingleNode("//h1")?.InnerText.Trim() ?? "");
+            job.Company = HtmlEntity.DeEntitize(
+                doc.DocumentNode.SelectSingleNode(
+                    "//*[contains(@class,'company-name')] | //a[contains(@href,'/sirket/')]")
+                ?.InnerText.Trim() ?? "");
 
-            _log.LogInformation("[secretcv.com] Detay alındı: {Title}", job.Title);
+            _log.LogInformation("[secretcv.com] HTML fallback ile detay alındı: {Title}", job.Title);
             return job;
         }
         catch (Exception ex)
@@ -209,6 +159,65 @@ public class SecretCvScraper : IJobScraper
             _log.LogError(ex, "[secretcv.com] Detay hatası: {Url}", url);
             return null;
         }
+    }
+
+    private bool TryParseJobPosting(HtmlDocument doc, JobListing job)
+    {
+        var scripts = doc.DocumentNode.SelectNodes("//script[@type='application/ld+json']");
+        if (scripts == null) return false;
+
+        foreach (var script in scripts)
+        {
+            try
+            {
+                var json = script.InnerText.Trim();
+                using var doc2 = System.Text.Json.JsonDocument.Parse(json);
+                var root = doc2.RootElement;
+
+                if (!root.TryGetProperty("@type", out var typeEl) ||
+                    typeEl.GetString() != "JobPosting") continue;
+
+                if (root.TryGetProperty("title", out var t) && string.IsNullOrEmpty(job.Title))
+                    job.Title = HtmlEntity.DeEntitize(t.GetString() ?? "");
+
+                if (root.TryGetProperty("description", out var d))
+                    job.Description = HtmlEntity.DeEntitize(d.GetString() ?? "");
+
+                if (root.TryGetProperty("employmentType", out var et))
+                    job.WorkType = et.GetString() ?? "";
+
+                if (root.TryGetProperty("validThrough", out var vt))
+                    job.ClosingDate = vt.GetString() ?? "";
+
+                if (root.TryGetProperty("hiringOrganization", out var org) &&
+                    org.TryGetProperty("name", out var orgName))
+                    job.Company = HtmlEntity.DeEntitize(orgName.GetString() ?? "");
+
+                if (root.TryGetProperty("jobLocation", out var loc) &&
+                    loc.TryGetProperty("address", out var addr) &&
+                    addr.TryGetProperty("addressLocality", out var locality))
+                    job.City = locality.GetString() ?? "";
+
+                if (root.TryGetProperty("educationRequirements", out var edu))
+                {
+                    if (edu.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        job.EducationLevel = string.Join(", ", edu.EnumerateArray()
+                            .Select(e => e.TryGetProperty("credentialCategory", out var cc) ? cc.GetString() : null)
+                            .Where(s => s != null));
+                    else if (edu.ValueKind == System.Text.Json.JsonValueKind.String)
+                        job.EducationLevel = edu.GetString() ?? "";
+                }
+
+                if (root.TryGetProperty("experienceRequirements", out var exp))
+                    job.Experience = exp.ValueKind == System.Text.Json.JsonValueKind.String
+                        ? exp.GetString() ?? ""
+                        : exp.TryGetProperty("name", out var expName) ? expName.GetString() ?? "" : "";
+
+                return !string.IsNullOrEmpty(job.Description);
+            }
+            catch { /* Bu script JSON-LD değilse atla */ }
+        }
+        return false;
     }
 
     private static void ParseInfoRows(HtmlDocument doc, JobListing job)

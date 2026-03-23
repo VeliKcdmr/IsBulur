@@ -594,3 +594,72 @@ html, body {
     color: #dc2626;
     font-size: 13px;
 }
+
+/* Detay - açıklama yok */
+.ib-detail-no-desc {
+    padding: 16px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 13px;
+    text-align: center;
+    margin: 12px 0;
+}
+
+/* Şehir dropdown */
+.ib-city-wrapper {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.ib-city-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    min-width: 200px;
+    max-height: 240px;
+    overflow-y: auto;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    z-index: 1000;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+    .ib-city-dropdown::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .ib-city-dropdown::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .ib-city-dropdown::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+    }
+
+.ib-city-option {
+    padding: 9px 14px;
+    font-size: 13px;
+    color: #334155;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+    .ib-city-option:hover {
+        background: #E1F5EE;
+        color: #0A8C82;
+    }
+
+    .ib-city-option:first-child {
+        border-radius: 10px 10px 0 0;
+    }
+
+    .ib-city-option:last-child {
+        border-radius: 0 0 10px 10px;
+    }

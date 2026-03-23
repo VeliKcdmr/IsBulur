@@ -75,15 +75,8 @@ public class JobAggregatorService
                 allJobs.Count,
                 string.Join(", ", sourceCounts.Select(kv => $"{kv.Key}:{kv.Value}")));
 
-            // Ham veriyi önbelleğe kaydet
-            await _db.CachedSearches.AddAsync(new CachedSearch
-            {
-                CacheKey = allJobsCacheKey,
-                ResultJson = JsonSerializer.Serialize(allJobs),
-                CreatedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.Add(_cacheDuration)
-            });
-            await _db.SaveChangesAsync();
+            // Ham veriyi önbelleğe kaydet (upsert)
+            await UpsertCacheAsync(allJobsCacheKey, JsonSerializer.Serialize(allJobs));
         }
 
         // Sayfalama uygula
@@ -102,27 +95,39 @@ public class JobAggregatorService
             SourceCounts = sourceCounts
         };
 
-        // Sayfalı sonucu önbelleğe kaydet
-        var existing = await _db.CachedSearches.FirstOrDefaultAsync(c => c.CacheKey == cacheKey);
-        if (existing != null)
-        {
-            existing.ResultJson = JsonSerializer.Serialize(response);
-            existing.CreatedAt = DateTime.UtcNow;
-            existing.ExpiresAt = DateTime.UtcNow.Add(_cacheDuration);
-        }
-        else
-        {
-            await _db.CachedSearches.AddAsync(new CachedSearch
-            {
-                CacheKey = cacheKey,
-                ResultJson = JsonSerializer.Serialize(response),
-                CreatedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.Add(_cacheDuration)
-            });
-        }
-
-        await _db.SaveChangesAsync();
+        // Sayfalı sonucu önbelleğe kaydet (upsert)
+        await UpsertCacheAsync(cacheKey, JsonSerializer.Serialize(response));
 
         return response;
+    }
+
+    private async Task UpsertCacheAsync(string key, string json)
+    {
+        try
+        {
+            var existing = await _db.CachedSearches.FirstOrDefaultAsync(c => c.CacheKey == key);
+            if (existing != null)
+            {
+                existing.ResultJson = json;
+                existing.CreatedAt = DateTime.UtcNow;
+                existing.ExpiresAt = DateTime.UtcNow.Add(_cacheDuration);
+            }
+            else
+            {
+                await _db.CachedSearches.AddAsync(new CachedSearch
+                {
+                    CacheKey = key,
+                    ResultJson = json,
+                    CreatedAt = DateTime.UtcNow,
+                    ExpiresAt = DateTime.UtcNow.Add(_cacheDuration)
+                });
+            }
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Race condition veya başka DB hatası — önbelleğe yazılamazsa sonuç yine de döner
+            _log.LogWarning("Önbellek yazılamadı [{Key}]: {Msg}", key, ex.Message);
+        }
     }
 }

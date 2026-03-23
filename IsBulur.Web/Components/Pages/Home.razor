@@ -25,9 +25,25 @@
             <input class="ib-input" placeholder="Pozisyon (örn: yazılım geliştirici) & Firma Adı"
                    @bind="Keyword" @bind:event="oninput"
                    @onkeydown="OnKeyDown" />
-            <input class="ib-input ib-input-sm" placeholder="Şehir (örn: istanbul)"
-                   @bind="Location" @bind:event="oninput"
-                   @onkeydown="OnKeyDown" />
+            <div class="ib-city-wrapper">
+                <input class="ib-input ib-input-sm" placeholder="Şehir seçin veya yazın"
+                       autocomplete="off"
+                       value="@Location"
+                       @onfocus="OnCityFocus"
+                       @oninput="OnCityInput"
+                       @onblur="() => CityDropdownOpen = false"
+                       @onkeydown="OnKeyDown" />
+                @if (CityDropdownOpen && FilteredCities.Count > 0)
+                {
+                    <div class="ib-city-dropdown">
+                        @foreach (var city in FilteredCities)
+                        {
+                            var c = city;
+                            <div class="ib-city-option" @onmousedown="() => SelectCity(c)">@c</div>
+                        }
+                    </div>
+                }
+            </div>
             <button class="ib-btn-primary" @onclick="StartSearch" disabled="@IsLoading">
                 @if (IsLoading)
                 {
@@ -216,6 +232,12 @@
                             }
                         </div>
                     }
+                    else if (!IsDetailLoading)
+                    {
+                        <div class="ib-detail-no-desc">
+                            Açıklama bu kaynaktan alınamadı. Detayları sitede görüntüleyebilirsiniz.
+                        </div>
+                    }
                     <a href="@SelectedJob.Url" target="_blank" class="ib-btn-outline">
                         Sitede Aç →
                     </a>
@@ -287,9 +309,32 @@
     private int CurrentPage = 1;
     private List<string> AvailableSources = new();
     private HashSet<string> SelectedSources = new();
+    private bool CityDropdownOpen = false;
+    private List<string> FilteredCities = new();
+
+    private static readonly List<string> TurkishCities =
+    [
+        "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Amasya",
+        "Ankara", "Antalya", "Artvin", "Aydın", "Balıkesir",
+        "Bilecik", "Bingöl", "Bitlis", "Bolu", "Burdur",
+        "Bursa", "Çanakkale", "Çankırı", "Çorum", "Denizli",
+        "Diyarbakır", "Edirne", "Elazığ", "Erzincan", "Erzurum",
+        "Eskişehir", "Gaziantep", "Giresun", "Gümüşhane", "Hakkari",
+        "Hatay", "Isparta", "Mersin", "İstanbul", "İzmir",
+        "Kars", "Kastamonu", "Kayseri", "Kırklareli", "Kırşehir",
+        "Kocaeli", "Konya", "Kütahya", "Malatya", "Manisa",
+        "Kahramanmaraş", "Mardin", "Muğla", "Muş", "Nevşehir",
+        "Niğde", "Ordu", "Rize", "Sakarya", "Samsun",
+        "Siirt", "Sinop", "Sivas", "Tekirdağ", "Tokat",
+        "Trabzon", "Tunceli", "Şanlıurfa", "Uşak", "Van",
+        "Yozgat", "Zonguldak", "Aksaray", "Bayburt", "Karaman",
+        "Kırıkkale", "Batman", "Şırnak", "Bartın", "Ardahan",
+        "Iğdır", "Yalova", "Karabük", "Kilis", "Osmaniye", "Düzce"
+    ];
 
     protected override async Task OnInitializedAsync()
     {
+        FilteredCities = TurkishCities;
         try
         {
             AvailableSources = await Api.GetSourcesAsync();
@@ -422,12 +467,45 @@
         }
     }
 
+    private void OnCityFocus()
+    {
+        FilteredCities = string.IsNullOrWhiteSpace(Location)
+            ? TurkishCities
+            : TurkishCities.Where(c => c.Contains(Location, StringComparison.OrdinalIgnoreCase)).ToList();
+        CityDropdownOpen = true;
+    }
+
+    private void OnCityInput(ChangeEventArgs e)
+    {
+        Location = e.Value?.ToString() ?? "";
+        FilteredCities = string.IsNullOrWhiteSpace(Location)
+            ? TurkishCities
+            : TurkishCities
+                .Where(c => c.StartsWith(Location, StringComparison.OrdinalIgnoreCase)
+                         || c.Contains(Location, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(c => c.StartsWith(Location, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ToList();
+        CityDropdownOpen = true;
+    }
+
+    private void SelectCity(string city)
+    {
+        Location = city.ToLower();
+        CityDropdownOpen = false;
+        FilteredCities = new();
+    }
+
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
         {
+            CityDropdownOpen = false;
             CurrentPage = 1;
             await SearchAsync();
+        }
+        else if (e.Key == "Escape")
+        {
+            CityDropdownOpen = false;
         }
     }
 
