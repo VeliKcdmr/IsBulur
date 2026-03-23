@@ -1,9 +1,18 @@
+using IsBulur.API.Data;
 using IsBulur.API.Services;
 using IsBulur.API.Services.Scrapers;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+// SQLite
+builder.Services.AddDbContext<AppDbContext>(opt =>
+    opt.UseSqlite("Data Source=isbulur.db"));
+
+// Aggregator artık DbContext alıyor
+builder.Services.AddScoped<JobAggregatorService>();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -19,10 +28,34 @@ builder.Services.AddSingleton<IJobScraper, KariyerNetScraper>(sp =>
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<ILogger<KariyerNetScraper>>()));
 
+builder.Services.AddHttpClient<YenibirisScraper>();
+builder.Services.AddSingleton<IJobScraper, YenibirisScraper>(sp =>
+    new YenibirisScraper(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<ILogger<YenibirisScraper>>()));
+
+builder.Services.AddHttpClient<ElemanNetScraper>();
+builder.Services.AddSingleton<IJobScraper, ElemanNetScraper>(sp =>
+    new ElemanNetScraper(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<ILogger<ElemanNetScraper>>()));
+
+builder.Services.AddHttpClient<SecretCvScraper>();
+builder.Services.AddSingleton<IJobScraper, SecretCvScraper>(sp =>
+    new SecretCvScraper(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        sp.GetRequiredService<ILogger<SecretCvScraper>>()));
+
 // Aggregator
 builder.Services.AddScoped<JobAggregatorService>();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+}
 
 if (app.Environment.IsDevelopment())
 {

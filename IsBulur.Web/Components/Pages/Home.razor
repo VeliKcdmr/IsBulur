@@ -1,0 +1,370 @@
+﻿@page "/"
+@using IsBulur.Shared.Models
+@using IsBulur.Web.Services
+@inject JobApiService Api
+@rendermode InteractiveServer
+
+<PageTitle>İş Bulur — Tüm ilanlar, tek uygulama.</PageTitle>
+
+<div class="isbulur-app">
+    <div class="ib-container">
+
+        <header class="ib-header">
+            <div class="ib-logo">
+                <svg width="32" height="32" viewBox="0 0 32 32">
+                    <rect width="32" height="32" rx="8" fill="#0A8C82" />
+                    <circle cx="14" cy="14" r="6" fill="none" stroke="white" stroke-width="2.5" />
+                    <line x1="19" y1="19" x2="26" y2="26" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+                </svg>
+                <span class="ib-logo-text">İş Bulur</span>
+            </div>
+            <span class="ib-tagline">Tüm ilanlar, tek uygulama.</span>
+        </header>
+
+        <div class="ib-search-bar">
+            <input class="ib-input" placeholder="Pozisyon (örn: yazılım geliştirici) & Firma Adı"
+                   @bind="Keyword" @bind:event="oninput"
+                   @onkeydown="OnKeyDown" />
+            <input class="ib-input ib-input-sm" placeholder="Şehir (örn: istanbul)"
+                   @bind="Location" @bind:event="oninput"
+                   @onkeydown="OnKeyDown" />
+            <button class="ib-btn-primary" @onclick="SearchAsync" disabled="@IsLoading">
+                @if (IsLoading)
+                {
+                    <span>Aranıyor...</span>
+                }
+                else
+                {
+
+                    <span>Ara</span>
+                }
+            </button>
+        </div>
+
+        <div class="ib-filters">
+            <button class="ib-pill @(WorkModel == "" ? "active" : "")" @onclick='() => SetFilter("")'>Tümü</button>
+            <button class="ib-pill @(WorkModel == "Uzaktan" ? "active" : "")" @onclick='() => SetFilter("Uzaktan")'>Uzaktan</button>
+            <button class="ib-pill @(WorkModel == "Hibrit" ? "active" : "")" @onclick='() => SetFilter("Hibrit")'>Hibrit</button>
+            <button class="ib-pill @(WorkModel == "İş Yerinde" ? "active" : "")" @onclick='() => SetFilter("İş Yerinde")'>İş Yerinde</button>
+            <button class="ib-pill @(WorkType == "Tam zamanlı" ? "active" : "")" @onclick='() => SetWorkType("Tam zamanlı")'>Tam Zamanlı</button>
+            <button class="ib-pill @(WorkType == "Yarı zamanlı" ? "active" : "")" @onclick='() => SetWorkType("Yarı zamanlı")'>Yarı Zamanlı</button>
+        </div>
+
+        <div class="ib-content">
+
+            <div class="ib-list">
+                @if (Response == null && !IsLoading)
+                {
+                    <div class="ib-empty">
+                        <svg width="48" height="48" viewBox="0 0 48 48">
+                            <rect width="48" height="48" rx="12" fill="#E1F5EE" />
+                            <circle cx="21" cy="21" r="9" fill="none" stroke="#0A8C82" stroke-width="2.5" />
+                            <line x1="28" y1="28" x2="38" y2="38" stroke="#0A8C82" stroke-width="2.5" stroke-linecap="round" />
+                        </svg>
+                        <p>Arama yaparak tüm iş ilanlarına ulaşın.</p>
+                        <small>kariyer.net · yenibiris.com · eleman.net · secretcv.com</small>
+                    </div>
+                }
+                else if (IsLoading)
+                {
+                    <div class="ib-loading">
+                        <div class="ib-spinner"></div>
+                        <p>4 sitede aranıyor...</p>
+                    </div>
+                }
+                else if (Response?.Jobs.Count == 0)
+                {
+                    <div class="ib-empty">
+                        <p>Sonuç bulunamadı. Farklı bir arama deneyin.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ib-result-info">
+                        <span>@Response!.TotalCount ilan bulundu</span>
+                        <div class="ib-source-badges">
+                            @foreach (var src in Response.SourceCounts)
+                            {
+                                <span class="ib-source-badge">@src.Key: @src.Value</span>
+                            }
+                        </div>
+                    </div>
+
+                    @foreach (var job in Response.Jobs)
+                    {
+                        <div class="ib-job-card @(SelectedJob?.Id == job.Id ? "selected" : "")"
+                             @onclick="() => SelectJob(job)">
+                            <div class="ib-job-logo">
+                                @if (!string.IsNullOrEmpty(job.CompanyLogoUrl))
+                                {
+                                    <img src="@job.CompanyLogoUrl" alt="@CleanText(job.Company)" onerror="this.style.display='none'" />
+                                }
+                                else
+                                {
+                                    <span>@(job.Company.Length > 0 ? job.Company[0].ToString() : "?")</span>
+                                }
+                            </div>
+                            <div class="ib-job-info">
+                                <div class="ib-job-title">@CleanText(job.Title)</div>
+                                <div class="ib-job-company">@CleanText(job.Company)</div>
+                                <div class="ib-job-meta">
+                                    <span class="ib-badge city">@CleanText(job.City)</span>
+                                    @if (!string.IsNullOrEmpty(job.WorkModel))
+                                    {
+                                        <span class="ib-badge type">@job.WorkModel</span>
+                                    }
+                                    <span class="ib-badge time">@job.TimeAgo</span>
+                                    <span class="ib-badge source">@job.Source</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="ib-detail">
+                @if (IsDetailLoading)
+                {
+                    <div class="ib-detail-empty">
+                        <div class="ib-spinner"></div>
+                        <p>Detay yükleniyor...</p>
+                    </div>
+                }
+                else
+                    if (SelectedJob == null)
+                
+                    {
+                        <div class="ib-detail-empty">
+                            <svg width="40" height="40" viewBox="0 0 40 40">
+                                <rect width="40" height="40" rx="10" fill="#E1F5EE" />
+                                <circle cx="18" cy="18" r="7" fill="none" stroke="#0A8C82" stroke-width="2" />
+                                <line x1="23" y1="23" x2="31" y2="31" stroke="#0A8C82" stroke-width="2" stroke-linecap="round" />
+                            </svg>
+                            <p>Bir ilan seçin</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="ib-detail-logo">
+                            @if (!string.IsNullOrEmpty(SelectedJob.CompanyLogoUrl))
+                            {
+                                <img src="@SelectedJob.CompanyLogoUrl" alt="@CleanText(SelectedJob.Company)" />
+                            }
+                            else
+                            {
+                                <span>@(SelectedJob.Company.Length > 0 ? SelectedJob.Company[0].ToString() : "?")</span>
+                            }
+                        </div>
+                        <h2 class="ib-detail-title">@CleanText(SelectedJob.Title)</h2>
+                        <p class="ib-detail-company">@CleanText(SelectedJob.Company)</p>
+                        <div class="ib-detail-tags">
+                            <span class="ib-badge city">@CleanText(SelectedJob.City)</span>
+                            @if (!string.IsNullOrEmpty(SelectedJob.WorkModel))
+                            {
+                                <span class="ib-badge type">@SelectedJob.WorkModel</span>
+                            }
+                            @if (!string.IsNullOrEmpty(SelectedJob.WorkType))
+                            {
+                                <span class="ib-badge type">@SelectedJob.WorkType</span>
+                            }
+                        </div>
+                        <div class="ib-detail-divider"></div>
+                        @if (!string.IsNullOrEmpty(SelectedJob.Experience))
+                        {
+                            <div class="ib-detail-row"><span>Tecrübe</span><span>@SelectedJob.Experience</span></div>
+                        }
+                        @if (!string.IsNullOrEmpty(SelectedJob.EducationLevel))
+                        {
+                            <div class="ib-detail-row"><span>Eğitim</span><span>@SelectedJob.EducationLevel</span></div>
+                        }
+                        @if (!string.IsNullOrEmpty(SelectedJob.ClosingDate))
+                        {
+                            <div class="ib-detail-row"><span>Son başvuru</span><span>@SelectedJob.ClosingDate</span></div>
+                        }
+                        <div class="ib-detail-divider"></div>
+                        @if (!string.IsNullOrEmpty(SelectedJob.Description))
+                        {
+                            <div class="ib-detail-desc-title">İş Tanımı</div>
+                            <div class="ib-detail-desc">
+                                @foreach (var sentence in FormatDescription(SelectedJob.Description))
+                                {
+                                    <p>@CleanText(sentence)</p>
+                                }
+                            </div>
+                        }
+                        <a href="@SelectedJob.Url" target="_blank" class="ib-btn-outline">
+                            Sitede Aç →
+                        </a>
+                    }
+            </div>
+        </div>
+
+        <!-- Sayfalama — içeriğin dışında, ekranın altında sabit -->
+        @if (Response?.TotalPages > 1)
+        {
+            <div class="ib-pagination">
+                <button class="ib-pg-btn nav" @onclick="PrevPage" disabled="@(CurrentPage == 1)">← Önceki</button>
+
+                @{
+                    int start = Math.Max(1, CurrentPage - 2);
+                    int end = Math.Min(Response.TotalPages, start + 4);
+                    start = Math.Max(1, end - 4);
+                }
+
+                @if (start > 1)
+                {
+                    <button class="ib-pg-btn" @onclick='() => GoToPage(1)'>1</button>
+                    @if (start > 2)
+                    {
+                        <span class="ib-pg-dots">...</span>
+                    }
+                }
+
+                @for (int i = start; i <= end; i++)
+                {
+                    var pageNum = i;
+                    <button class="ib-pg-btn @(CurrentPage == pageNum ? "active" : "")"
+                            @onclick="() => GoToPage(pageNum)">
+                        @pageNum
+                    </button>
+                }
+
+                @if (end < Response.TotalPages)
+                {
+                    @if (end < Response.TotalPages - 1)
+                    {
+                        <span class="ib-pg-dots">...</span>
+                    }
+                    <button class="ib-pg-btn @(CurrentPage == Response.TotalPages ? "active" : "")"
+                            @onclick="() => GoToPage(Response.TotalPages)">
+                        @Response.TotalPages
+                    </button>
+                }
+
+                <button class="ib-pg-btn nav" @onclick="NextPage" disabled="@(CurrentPage == Response.TotalPages)">Sonraki →</button>
+            </div>
+        }
+
+        <div class="ib-status">@StatusText</div>
+
+    </div>
+</div>
+
+@code {
+    private string Keyword = "";
+    private string Location = "";
+    private string WorkModel = "";
+    private string WorkType = "";
+    private bool IsLoading = false;
+    private string StatusText = "Hazır";
+    private SearchResponse? Response;
+    private JobListing? SelectedJob;
+    private int CurrentPage = 1;
+    private bool IsDetailLoading = false;
+
+    private async Task SearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Keyword) && string.IsNullOrWhiteSpace(Location)) return;
+
+        IsLoading = true;
+        StatusText = "Aranıyor...";
+        SelectedJob = null;
+
+        try
+        {
+            Response = await Api.SearchAsync(Keyword, Location, WorkModel, WorkType, CurrentPage);
+            StatusText = $"{Response?.TotalCount ?? 0} ilan bulundu.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Hata: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task GoToPage(int page)
+    {
+        CurrentPage = page;
+        await SearchAsync();
+    }
+
+    private async Task PrevPage()
+    {
+        if (CurrentPage > 1) await GoToPage(CurrentPage - 1);
+    }
+
+    private async Task NextPage()
+    {
+        if (Response != null && CurrentPage < Response.TotalPages)
+            await GoToPage(CurrentPage + 1);
+    }
+
+    private string CleanText(string text)
+    {
+        return System.Net.WebUtility.HtmlDecode(text ?? "").Trim();
+    }
+
+    private List<string> FormatDescription(string text)
+    {
+        var decoded = System.Net.WebUtility.HtmlDecode(text ?? "");
+        return decoded
+            .Split(new[] { ". ", ".\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+    }
+
+    private async Task SetFilter(string model)
+    {
+        WorkModel = model;
+        CurrentPage = 1;
+        if (Response != null) await SearchAsync();
+    }
+
+    private async Task SetWorkType(string type)
+    {
+        WorkType = WorkType == type ? "" : type;
+        CurrentPage = 1;
+        if (Response != null) await SearchAsync();
+    }
+
+    private async Task SelectJob(JobListing job)
+    {
+        var jobId = job.Id;
+        SelectedJob = job;
+        IsDetailLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var detail = await Api.GetDetailAsync(job.Url, job.Source);
+            if (detail != null && SelectedJob?.Id == jobId)
+            {
+                detail.Id = jobId;
+                detail.CompanyLogoUrl = job.CompanyLogoUrl;
+                detail.Source = job.Source;
+                detail.TimeAgo = job.TimeAgo;
+                detail.City = string.IsNullOrEmpty(detail.City) ? job.City : detail.City;
+                SelectedJob = detail;
+            }
+        }
+        catch { }
+        finally
+        {
+            IsDetailLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            CurrentPage = 1;
+            await SearchAsync();
+        }
+    }
+}

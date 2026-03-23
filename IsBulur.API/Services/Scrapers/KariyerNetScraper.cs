@@ -125,4 +125,40 @@ public class KariyerNetScraper : IJobScraper
 
         return jobs;
     }
+    public async Task<JobListing?> GetDetailAsync(string url)
+    {
+        try
+        {
+            await Task.Delay(100);
+            var html = await _http.GetStringAsync(url);
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            var job = new JobListing { Url = url, Source = SourceName };
+
+            job.Title = doc.DocumentNode.SelectSingleNode("//*[@data-test='job-title']")?.InnerText.Trim() ?? "";
+            job.Company = doc.DocumentNode.SelectSingleNode("//*[@data-test='subtitle']")?.InnerText.Trim() ?? "";
+
+            var descNode = doc.DocumentNode.SelectSingleNode("//*[@data-test='qualifications-and-job-description']");
+            job.Description = descNode?.InnerText.Trim() ?? "";
+
+            var alignItems = doc.DocumentNode.SelectNodes("//div[contains(@class,'alignment-list')]//div[contains(@class,'alignment-value')]");
+            if (alignItems != null && alignItems.Count >= 2)
+            {
+                job.Experience = alignItems[0].InnerText.Trim();
+                job.EducationLevel = alignItems[1].InnerText.Trim();
+            }
+
+            var jobContainer = doc.DocumentNode.SelectSingleNode("//div[contains(@class,'job-container')]");
+            job.ClosingDate = jobContainer?.GetAttributeValue("closingdate", "") ?? "";
+            job.LastPublishDate = jobContainer?.GetAttributeValue("lastpublishdate", "") ?? "";
+
+            return job;
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "[kariyer.net] Detay hatası: {Url}", url);
+            return null;
+        }
+    }
 }

@@ -28,7 +28,7 @@ public record SearchRequest(
     string WorkType = "",    // Tam zamanlı, Yarı zamanlı
     List<string>? Sources = null,  // Hangi sitelerden aransın
     int Page = 1,
-    int PageSize = 20
+    int PageSize = 10
 );
 
 public class SearchResponse

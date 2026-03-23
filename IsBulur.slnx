@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="IsBulur.API/IsBulur.API.csproj" />
   <Project Path="IsBulur.Shared/IsBulur.Shared.csproj" />
+  <Project Path="IsBulur.Web/IsBulur.Web.csproj" Id="828aee87-de15-4678-b287-c3624e60b580" />
 </Solution>
