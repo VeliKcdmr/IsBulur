@@ -21,6 +21,9 @@ builder.Services.AddCors(opt =>
     opt.AddDefaultPolicy(p =>
         p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
+// HttpClientFactory — scraper'lar için gerekli
+builder.Services.AddHttpClient();
+
 // Scrapers
 builder.Services.AddSingleton<IJobScraper, KariyerNetScraper>(sp =>
     new KariyerNetScraper(
