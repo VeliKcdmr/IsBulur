@@ -536,3 +536,61 @@ html, body {
     background: white;
     border-top: 1px solid #e2e8f0;
 }
+/* Kaynak filtresi */
+.ib-source-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 24px;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    align-items: center;
+}
+
+.ib-source-check {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    font-size: 12px;
+    color: #64748b;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s;
+}
+
+    .ib-source-check input[type=checkbox] {
+        accent-color: #0A8C82;
+        width: 13px;
+        height: 13px;
+    }
+
+    .ib-source-check.active {
+        background: #E1F5EE;
+        border-color: #0A8C82;
+        color: #0A8C82;
+        font-weight: 600;
+    }
+
+.ib-clear-cache {
+    margin-left: auto;
+    color: #64748b;
+    border-color: #e2e8f0;
+}
+
+    .ib-clear-cache:hover {
+        background: #f8fafc;
+    }
+
+/* Hata mesajı */
+.ib-error {
+    margin: 8px 24px;
+    padding: 10px 14px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    color: #dc2626;
+    font-size: 13px;
+}

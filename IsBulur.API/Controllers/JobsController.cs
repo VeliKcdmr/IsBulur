@@ -1,7 +1,8 @@
-﻿using IsBulur.API.Data;
+using IsBulur.API.Data;
 using IsBulur.API.Services;
 using IsBulur.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace IsBulur.API.Controllers;
 
@@ -26,21 +27,21 @@ public class JobsController : ControllerBase
         var result = await _aggregator.SearchAsync(request);
         return Ok(result);
     }
+
     // GET /api/jobs/detail?url=https://...&source=kariyer.net
     [HttpGet("detail")]
     public async Task<ActionResult<JobListing>> Detail(
-    [FromQuery] string url,
-    [FromQuery] string source,
-    [FromServices] IEnumerable<IJobScraper> scrapers,
-    [FromServices] AppDbContext db)
+        [FromQuery] string url,
+        [FromQuery] string source,
+        [FromServices] IEnumerable<IJobScraper> scrapers,
+        [FromServices] AppDbContext db)
     {
         if (string.IsNullOrWhiteSpace(url))
             return BadRequest("URL zorunlu.");
 
-        // Önbellekte var mı?
         var cacheKey = $"detail|{url}";
         var cached = db.CachedSearches
-    .FirstOrDefault(c => c.CacheKey == cacheKey && c.ExpiresAt > DateTime.UtcNow);
+            .FirstOrDefault(c => c.CacheKey == cacheKey && c.ExpiresAt > DateTime.UtcNow);
 
         if (cached != null)
         {
@@ -55,7 +56,6 @@ public class JobsController : ControllerBase
         var job = await scraper.GetDetailAsync(url);
         if (job is null) return NotFound();
 
-        // Önbelleğe kaydet — 6 saat
         await db.CachedSearches.AddAsync(new CachedSearch
         {
             CacheKey = cacheKey,
@@ -67,10 +67,47 @@ public class JobsController : ControllerBase
 
         return Ok(job);
     }
+
     // GET /api/jobs/sources
     [HttpGet("sources")]
     public ActionResult<List<string>> GetSources([FromServices] IEnumerable<IJobScraper> scrapers)
     {
         return Ok(scrapers.Select(s => s.SourceName).ToList());
+    }
+
+    // DELETE /api/jobs/cache
+    [HttpDelete("cache")]
+    public async Task<IActionResult> ClearCache([FromServices] AppDbContext db)
+    {
+        var deleted = await db.CachedSearches
+            .Where(c => c.ExpiresAt <= DateTime.UtcNow.AddYears(10))
+            .ExecuteDeleteAsync();
+        return Ok(new { deleted, message = $"{deleted} önbellek kaydı silindi." });
+    }
+
+    // GET /api/jobs/health
+    [HttpGet("health")]
+    public async Task<ActionResult<object>> Health(
+        [FromServices] IEnumerable<IJobScraper> scrapers,
+        [FromServices] IHttpClientFactory httpClientFactory)
+    {
+        var checks = await Task.WhenAll(scrapers.Select(async s =>
+        {
+            try
+            {
+                var http = httpClientFactory.CreateClient();
+                http.Timeout = TimeSpan.FromSeconds(5);
+                var siteName = s.SourceName.Replace(".", "-");
+                var testUrl = $"https://www.{s.SourceName}";
+                var resp = await http.GetAsync(testUrl);
+                return new { source = s.SourceName, ok = resp.IsSuccessStatusCode, status = (int)resp.StatusCode };
+            }
+            catch
+            {
+                return new { source = s.SourceName, ok = false, status = 0 };
+            }
+        }));
+
+        return Ok(new { checkedAt = DateTime.UtcNow, scrapers = checks });
     }
 }

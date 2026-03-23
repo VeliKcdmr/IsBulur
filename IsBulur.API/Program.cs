@@ -22,32 +22,25 @@ builder.Services.AddCors(opt =>
         p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 // Scrapers
-builder.Services.AddHttpClient<KariyerNetScraper>();
 builder.Services.AddSingleton<IJobScraper, KariyerNetScraper>(sp =>
     new KariyerNetScraper(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<ILogger<KariyerNetScraper>>()));
 
-builder.Services.AddHttpClient<YenibirisScraper>();
 builder.Services.AddSingleton<IJobScraper, YenibirisScraper>(sp =>
     new YenibirisScraper(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<ILogger<YenibirisScraper>>()));
 
-builder.Services.AddHttpClient<ElemanNetScraper>();
 builder.Services.AddSingleton<IJobScraper, ElemanNetScraper>(sp =>
     new ElemanNetScraper(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<ILogger<ElemanNetScraper>>()));
 
-builder.Services.AddHttpClient<SecretCvScraper>();
 builder.Services.AddSingleton<IJobScraper, SecretCvScraper>(sp =>
     new SecretCvScraper(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
         sp.GetRequiredService<ILogger<SecretCvScraper>>()));
-
-// Aggregator
-builder.Services.AddScoped<JobAggregatorService>();
 
 var app = builder.Build();
 
